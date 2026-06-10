@@ -4,10 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
 from PIL import Image
-from model import DeepFontModel  # 确保 model.py 在当前或系统路径下
+from model import DeepFontModel  # Ensure model.py is in the same directory
 
 def predict_font(image_path, weights_path="deepfont_weights.pth", dataset_dir="./font_dataset"):
-    # 1. 硬件检测
+    # 1. Hardware Detection
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available():
@@ -15,7 +15,7 @@ def predict_font(image_path, weights_path="deepfont_weights.pth", dataset_dir=".
     else:
         device = torch.device("cpu")
         
-    # 2. 获取类别映射（根据训练集文件夹名字字典序排列）
+    # 2. Get Class Mapping
     if not os.path.exists(dataset_dir):
         print(f"Error: Need '{dataset_dir}' to map class indices to font names.")
         return
@@ -23,7 +23,7 @@ def predict_font(image_path, weights_path="deepfont_weights.pth", dataset_dir=".
     class_names = sorted([d for d in os.listdir(dataset_dir) if os.path.isdir(os.path.join(dataset_dir, d))])
     num_classes = len(class_names)
 
-    # 3. 图像预处理（尺寸固定为高 105，宽 150）
+    # 3. Image Preprocessing (Strictly forced to H: 105, W: 150)
     data_transforms = transforms.Compose([
         transforms.Resize((105, 150)),  
         transforms.Grayscale(num_output_channels=1),
@@ -31,7 +31,7 @@ def predict_font(image_path, weights_path="deepfont_weights.pth", dataset_dir=".
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    # 4. 加载测试图片
+    # 4. Load Image and Process
     if not os.path.exists(image_path):
         print(f"Error: Image file '{image_path}' not found.")
         return
@@ -42,43 +42,32 @@ def predict_font(image_path, weights_path="deepfont_weights.pth", dataset_dir=".
         print(f"Error opening image: {e}")
         return
 
-    # 应用预处理并增加 batch 维度 [1, 1, 105, 150]
+    # Apply transformations and add a batch dimension
     input_tensor = data_transforms(image).unsqueeze(0).to(device)
 
-    # 5. 初始化模型并加载权重
+    # 5. Initialize Model and Load Weights
     model = DeepFontModel(num_classes=num_classes).to(device)
     
     if not os.path.exists(weights_path):
-        print(f"Error: Weights file '{weights_path}' not found. Please train the model first.")
+        print(f"Error: Weights file '{weights_path}' not found.")
         return
         
     model.load_state_dict(torch.load(weights_path, map_location=device))
-    model.eval()  # 切换到评估模式
+    model.eval()  # Switch to evaluation mode
 
-    # 6. 推理阶段（计算 Top-3）
+    # 6. Inference
     with torch.no_grad():
         outputs = model(input_tensor)
         probabilities = F.softmax(outputs[0], dim=0)
-        
-        # 获取前 3 个最大值及其索引。若总类别数少于 3，则取实际类别数
-        k_value = min(3, num_classes)
-        topk_probs, topk_indices = torch.topk(probabilities, k=k_value)
+        confidence, predicted_idx = torch.max(probabilities, 0)
+        predicted_class = class_names[predicted_idx.item()]
 
-    # 7. 打印 Top-3 结果
-    print("\n" + "="*40)
-    print("        Top-3 Font Predictions        ")
-    print("="*40)
-    
-    for i in range(len(topk_probs)):
-        prob = topk_probs[i].item() * 100
-        idx = topk_indices[i].item()
-        font_name = class_names[idx]
-        
-        print(f"[{i+1}] Font: {font_name:<18} | Confidence: {prob:.2f}%")
-        
-    print("="*40)
+    # 7. Print Results
+    print("\n" + "="*30)
+    print(f"Predicted Font: {predicted_class}")
+    print(f"Confidence:     {confidence.item() * 100:.2f}%")
+    print("="*30)
 
 if __name__ == "__main__":
-    # 💡 运行前，请把这里替换为你真正想测试的图片路径
-    test_image_url = "test_data/test_image.png" 
+    test_image_url = "font_dataset_for_eval/AlienBlock/AlienBlock_0.png"  
     predict_font(test_image_url)

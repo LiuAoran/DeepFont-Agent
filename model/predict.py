@@ -4,10 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
 from PIL import Image
-from model import DeepFontModel  # 确保 model.py 在同一目录下
+from model import DeepFontModel  # Ensure model.py is in the same directory
 
 def predict_font(image_path, weights_path="deepfont_weights.pth", dataset_dir="./font_dataset"):
-    # 1. 硬件检测
+    # 1. Hardware Detection
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available():
@@ -15,7 +15,7 @@ def predict_font(image_path, weights_path="deepfont_weights.pth", dataset_dir=".
     else:
         device = torch.device("cpu")
         
-    # 2. 获取类别映射
+    # 2. Get Class Mapping
     if not os.path.exists(dataset_dir):
         print(f"Error: Need '{dataset_dir}' to map class indices to font names.")
         return
@@ -23,15 +23,15 @@ def predict_font(image_path, weights_path="deepfont_weights.pth", dataset_dir=".
     class_names = sorted([d for d in os.listdir(dataset_dir) if os.path.isdir(os.path.join(dataset_dir, d))])
     num_classes = len(class_names)
 
-    # 3. 图像预处理 ⬇️ 已经在这里帮你改好啦 ⬇️
+    # 3. Image Preprocessing (Strictly forced to H: 105, W: 150)
     data_transforms = transforms.Compose([
-        transforms.Resize((105, 150)),  # 👈 核心修改：强制缩放到高 105，宽 150
+        transforms.Resize((105, 150)),  
         transforms.Grayscale(num_output_channels=1),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    # 4. 加载图片并处理
+    # 4. Load Image and Process
     if not os.path.exists(image_path):
         print(f"Error: Image file '{image_path}' not found.")
         return
@@ -42,8 +42,10 @@ def predict_font(image_path, weights_path="deepfont_weights.pth", dataset_dir=".
         print(f"Error opening image: {e}")
         return
 
+    # Apply transformations and add a batch dimension
     input_tensor = data_transforms(image).unsqueeze(0).to(device)
 
+    # 5. Initialize Model and Load Weights
     model = DeepFontModel(num_classes=num_classes).to(device)
     
     if not os.path.exists(weights_path):
@@ -51,14 +53,16 @@ def predict_font(image_path, weights_path="deepfont_weights.pth", dataset_dir=".
         return
         
     model.load_state_dict(torch.load(weights_path, map_location=device))
-    model.eval()  
+    model.eval()  # Switch to evaluation mode
 
+    # 6. Inference
     with torch.no_grad():
         outputs = model(input_tensor)
         probabilities = F.softmax(outputs[0], dim=0)
         confidence, predicted_idx = torch.max(probabilities, 0)
         predicted_class = class_names[predicted_idx.item()]
 
+    # 7. Print Results
     print("\n" + "="*30)
     print(f"Predicted Font: {predicted_class}")
     print(f"Confidence:     {confidence.item() * 100:.2f}%")

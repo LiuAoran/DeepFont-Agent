@@ -97,4 +97,6 @@ celerybeat-schedule
 ._*
 !.gitattributes
 fonts/
-font_dataset/
+font_dataset/   
+font_dataset_for_eval/
+test_data/

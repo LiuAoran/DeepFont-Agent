@@ -131,8 +131,8 @@ def generate_font_dataset(font_dir, output_dir, images_per_font=100):
 if __name__ == "__main__":
     # Configure your input directory (where your 10 fonts are)
     INPUT_FONT_DIR = "./fonts" 
-    OUTPUT_DATASET_DIR = "./font_dataset"
+    OUTPUT_DATASET_DIR = "./font_dataset_for_eval"
     
-    # Generate 1000 training images per font family
-    generate_font_dataset(INPUT_FONT_DIR, OUTPUT_DATASET_DIR, images_per_font=1000)
+    # Generate 100 training images per font family
+    generate_font_dataset(INPUT_FONT_DIR, OUTPUT_DATASET_DIR, images_per_font=100)
     print("\nDataset synthesis complete successfully!")

@@ -5,134 +5,335 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+
 def generate_random_text():
-    """Generate a random string with mixed lengths and characters"""
-    length = random.randint(4, 8)
-    # Mix uppercase, lowercase, and digits
-    pool = string.ascii_letters + string.digits
-    return ''.join(random.choice(pool) for _ in range(length))
+    """Generate random text"""
+
+    length = random.randint(5, 15)
+
+    pool = (
+        string.ascii_letters +
+        string.digits +
+        " "
+    )
+
+    text = ''.join(
+        random.choice(pool)
+        for _ in range(length)
+    )
+
+    text = " ".join(text.split())
+
+    if len(text) == 0:
+        text = random.choice(string.ascii_letters)
+
+    return text
+
 
 def apply_shading(img):
-    """Simulate uneven illumination (gradient shading)"""
+    """Simulate uneven illumination"""
+
     h, w = img.shape[:2]
-    u, v = np.meshgrid(np.linspace(0, 1, w), np.linspace(0, 1, h))
+
+    u, v = np.meshgrid(
+        np.linspace(0, 1, w),
+        np.linspace(0, 1, h)
+    )
+
     alpha = random.uniform(0.3, 0.8)
-    
-    # Randomly choose linear gradient direction
-    mask = alpha * u + (1 - alpha) * v if random.random() > 0.5 else alpha * v + (1 - alpha) * u
+
+    if random.random() > 0.5:
+        mask = alpha * u + (1 - alpha) * v
+    else:
+        mask = alpha * v + (1 - alpha) * u
+
     mask = (mask * 255).astype(np.uint8)
-    
-    # Blend the shading mask into the image
-    return cv2.addWeighted(img, 0.7, mask, 0.3, 0)
+
+    return cv2.addWeighted(
+        img,
+        0.7,
+        mask,
+        0.3,
+        0
+    )
+
 
 def apply_perspective(img):
     """Simulate camera tilt and perspective distortion"""
+
     h, w = img.shape[:2]
-    src_pts = np.float32([[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]])
-    
-    # Random pixel offsets for corners
-    max_offset = int(h * 0.15)
-    d1 = random.randint(0, max_offset)
-    d2 = random.randint(0, max_offset)
-    
-    dst_pts = np.float32([
-        [d1, d2], 
-        [w - 1 - d1, d2], 
-        [0, h - 1], 
+
+    src_pts = np.float32([
+        [0, 0],
+        [w - 1, 0],
+        [0, h - 1],
         [w - 1, h - 1]
     ])
-    
-    matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
-    return cv2.warpPerspective(img, matrix, (w, h), borderValue=255)
+
+    max_offset = int(h * 0.15)
+
+    d1 = random.randint(0, max_offset)
+    d2 = random.randint(0, max_offset)
+
+    dst_pts = np.float32([
+        [d1, d2],
+        [w - 1 - d1, d2],
+        [0, h - 1],
+        [w - 1, h - 1]
+    ])
+
+    matrix = cv2.getPerspectiveTransform(
+        src_pts,
+        dst_pts
+    )
+
+    return cv2.warpPerspective(
+        img,
+        matrix,
+        (w, h),
+        borderValue=255
+    )
+
 
 def apply_noise_and_blur(img):
-    """Apply random Gaussian blur and digital noise"""
-    # 1. Gaussian Blur
+    """Apply Gaussian blur and noise"""
+
     if random.random() > 0.5:
+
         kernel_size = random.choice([3, 5])
-        img = cv2.GaussianBlur(img, (kernel_size, kernel_size), 0)
-    
-    # 2. Gaussian Noise
+
+        img = cv2.GaussianBlur(
+            img,
+            (kernel_size, kernel_size),
+            0
+        )
+
     if random.random() > 0.5:
-        noise = np.random.normal(0, random.uniform(5, 15), img.shape).astype(np.float32)
-        img = np.clip(img.astype(np.float32) + noise, 0, 255).astype(np.uint8)
-        
+
+        noise = np.random.normal(
+            0,
+            random.uniform(5, 15),
+            img.shape
+        ).astype(np.float32)
+
+        img = np.clip(
+            img.astype(np.float32) + noise,
+            0,
+            255
+        ).astype(np.uint8)
+
     return img
 
-def generate_font_dataset(font_dir, output_dir, images_per_font=100):
-    """Loop through all fonts and generate synthetic patches with noise"""
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Target normalized height matching DeepFont requirements
+
+def crop_text_region(img):
+    """Crop text bounding box"""
+
+    coords = cv2.findNonZero(255 - img)
+
+    if coords is None:
+        return img
+
+    x, y, w, h = cv2.boundingRect(coords)
+
+    pad = 5
+
+    x1 = max(0, x - pad)
+    y1 = max(0, y - pad)
+
+    x2 = min(img.shape[1], x + w + pad)
+    y2 = min(img.shape[0], y + h + pad)
+
+    return img[y1:y2, x1:x2]
+
+
+def resize_keep_ratio(
+    img,
+    target_width=300,
+    target_height=105
+):
+    """Resize while preserving aspect ratio"""
+
+    h, w = img.shape
+
+    scale = min(
+        target_width / w,
+        target_height / h
+    )
+
+    new_w = max(1, int(w * scale))
+    new_h = max(1, int(h * scale))
+
+    img_resized = cv2.resize(
+        img,
+        (new_w, new_h),
+        interpolation=cv2.INTER_AREA
+    )
+
+    canvas = np.ones(
+        (target_height, target_width),
+        dtype=np.uint8
+    ) * 255
+
+    offset_x = (target_width - new_w) // 2
+    offset_y = (target_height - new_h) // 2
+
+    canvas[
+        offset_y:offset_y + new_h,
+        offset_x:offset_x + new_w
+    ] = img_resized
+
+    return canvas
+
+
+def generate_font_dataset(
+    font_dir,
+    output_dir,
+    images_per_font=100
+):
+    """Generate synthetic font dataset"""
+
+    os.makedirs(
+        output_dir,
+        exist_ok=True
+    )
+
     target_height = 105
-    target_width = 150  # Fixed width for network feeding consistency
-    
-    # Find all font files
-    font_files = [f for f in os.listdir(font_dir) if f.endswith(('.ttf', '.otf'))]
-    print(f"Found {len(font_files)} fonts in '{font_dir}'. starting synthesis...")
+    target_width = 300
+
+    font_files = [
+        f for f in os.listdir(font_dir)
+        if f.endswith(('.ttf', '.otf'))
+    ]
+
+    print(
+        f"Found {len(font_files)} fonts in '{font_dir}'"
+    )
 
     for font_file in font_files:
-        font_name = os.path.splitext(font_file)[0]
-        font_path = os.path.join(font_dir, font_file)
-        
-        # Create a specific directory for this font class
-        class_dir = os.path.join(output_dir, font_name)
-        os.makedirs(class_dir, exist_ok=True)
-        
-        print(f"Generating patches for: {font_name}")
-        
+
+        font_name = os.path.splitext(
+            font_file
+        )[0]
+
+        font_path = os.path.join(
+            font_dir,
+            font_file
+        )
+
+        class_dir = os.path.join(
+            output_dir,
+            font_name
+        )
+
+        os.makedirs(
+            class_dir,
+            exist_ok=True
+        )
+
+        print(
+            f"Generating patches for: {font_name}"
+        )
+
         for i in range(images_per_font):
+
             text = generate_random_text()
-            
-            # Base text rendering using Pillow
-            font_size = random.randint(55, 70)
+
+            font_size = random.randint(
+                20,
+                90
+            )
+
             try:
-                font = ImageFont.truetype(font_path, font_size)
+                font = ImageFont.truetype(
+                    font_path,
+                    font_size
+                )
             except IOError:
                 continue
-                
-            # Render text on a generous canvas to avoid truncation
-            canvas_w, canvas_h = 400, 150
-            img_pil = Image.new('L', (canvas_w, canvas_h), color=255)
-            draw = ImageDraw.Draw(img_pil)
-            
-            # Draw text near center
-            draw.text((30, 30), text, fill=0, font=font)
-            
-            # Convert to OpenCV format for geometric/pixel transformations
-            img_cv = np.array(img_pil)
-            
-            # Apply DeepFont pipeline expansions
-            img_cv = apply_perspective(img_cv)
-            img_cv = apply_shading(img_cv)
-            img_cv = apply_noise_and_blur(img_cv)
-            
-            # Resize step: Normalize height to 105, crop/resize width to 150
-            h, w = img_cv.shape
-            scale = target_height / h
-            new_w = int(w * scale)
-            img_resized = cv2.resize(img_cv, (new_w, target_height))
-            
-            # Center crop or pad horizontally to match strict target_width
-            if new_w >= target_width:
-                start_x = (new_w - target_width) // 2
-                final_patch = img_resized[:, start_x:start_x + target_width]
-            else:
-                # Pad with white pixels if text width is smaller than 150
-                pad_width = target_width - new_w
-                pad_left = pad_width // 2
-                pad_right = pad_width - pad_left
-                final_patch = cv2.copyMakeBorder(img_resized, 0, 0, pad_left, pad_right, cv2.BORDER_CONSTANT, value=255)
-            
-            # Save the final synthesized patch
-            save_path = os.path.join(class_dir, f"{font_name}_{i}.png")
-            cv2.imwrite(save_path, final_patch)
+
+            canvas_w = 600
+            canvas_h = 200
+
+            img_pil = Image.new(
+                'L',
+                (canvas_w, canvas_h),
+                color=255
+            )
+
+            draw = ImageDraw.Draw(
+                img_pil
+            )
+
+            bbox = draw.textbbox(
+                (0, 0),
+                text,
+                font=font
+            )
+
+            text_w = bbox[2] - bbox[0]
+            text_h = bbox[3] - bbox[1]
+
+            x = (canvas_w - text_w) // 2
+            y = (canvas_h - text_h) // 2
+
+            draw.text(
+                (x, y),
+                text,
+                fill=0,
+                font=font
+            )
+
+            img_cv = np.array(
+                img_pil
+            )
+
+            img_cv = apply_perspective(
+                img_cv
+            )
+
+            img_cv = apply_shading(
+                img_cv
+            )
+
+            img_cv = apply_noise_and_blur(
+                img_cv
+            )
+
+            img_cv = crop_text_region(
+                img_cv
+            )
+
+            final_patch = resize_keep_ratio(
+                img_cv,
+                target_width,
+                target_height
+            )
+
+            save_path = os.path.join(
+                class_dir,
+                f"{font_name}_{i}.png"
+            )
+
+            cv2.imwrite(
+                save_path,
+                final_patch
+            )
+
+        print(
+            f"Finished {font_name}"
+        )
+
 
 if __name__ == "__main__":
-    # Configure your input directory (where your 10 fonts are)
-    INPUT_FONT_DIR = "./fonts" 
+
+    INPUT_FONT_DIR = "./fonts"
+
     OUTPUT_DATASET_DIR = "./font_dataset"
-    
-    # Generate 1000 training images per font family
-    generate_font_dataset(INPUT_FONT_DIR, OUTPUT_DATASET_DIR, images_per_font=1000)
+
+    generate_font_dataset(
+        INPUT_FONT_DIR,
+        OUTPUT_DATASET_DIR,
+        images_per_font=1000
+    )
+
     print("\nDataset synthesis complete successfully!")
